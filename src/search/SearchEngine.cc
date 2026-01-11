@@ -78,10 +78,15 @@ GeoProtoPlaces findCities(const overpass::OsmIds& relationIds, nominatim::Match 
    // There is no way to select cities from all the entities in advance.
    const auto infos = nominatim::LookupRelationInformationForCities(relationIds, match, nominatimApiClient);
    if (infos.empty())
+   {
       LOG(ERROR) << std::format("Cannot find cities in Nominatim (checked {} relation ids)", relationIds.size());
+            return {};
+   }
    else
+   {
       LOG(INFO) << std::format(
          "Found {} cities in Nominatim (checked {} relation ids)", infos.size(), relationIds.size());
+   }
 
    GeoProtoPlaces result;
    for (const auto& i : infos)
@@ -89,7 +94,89 @@ GeoProtoPlaces findCities(const overpass::OsmIds& relationIds, nominatim::Match 
       GeoProtoPlace city = toGeoProtoPlace(i);
       if (includeDetails)
       {
-         // TODO
+         // ФОРМИРУЕМ OVERPASS QL ЗАПРОС для получения отелей и музеев
+         const std::string request = std::format(
+            R"([out:json][timeout:180];
+            rel(id: {});
+            map_to_area->.cityArea;
+            (
+                node[tourism=hotel](area.cityArea);
+                node[tourism=museum](area.cityArea);
+            );
+            out center;)",
+            i.osmId);
+
+         // Отправляем запрос к Overpass API
+         const std::string response = overpassApiClient.Post(request);
+
+         // Парсим JSON ответ
+         rapidjson::Document document;
+         document.Parse(response.c_str());
+
+         if (document.IsObject() && document.HasMember("elements"))
+         {
+            int featuresCount = 0;
+            for (const auto& element : document["elements"].GetArray())
+            {
+               // Проверяем, что это node (узел)
+               if (!element.IsObject() || !element.HasMember("type") ||
+                   std::string(element["type"].GetString()) != "node")
+                  continue;
+
+               // Проверяем теги
+               if (!element.HasMember("tags") || !element["tags"].IsObject())
+                  continue;
+
+               const auto& tags = element["tags"];
+               if (!tags.HasMember("tourism"))
+                  continue;
+
+               std::string tourismValue = tags["tourism"].GetString();
+               if (tourismValue != "hotel" && tourismValue != "museum")
+                  continue;
+
+               // Создаем Feature
+               GeoProtoTaggedFeature feature;
+
+               // Устанавливаем координаты
+               if (element.HasMember("lat") && element.HasMember("lon"))
+               {
+                  double lat = element["lat"].GetDouble();
+                  double lon = element["lon"].GetDouble();
+                  feature.mutable_position()->set_latitude(lat);
+                  feature.mutable_position()->set_longitude(lon);
+               }
+
+               // Добавляем теги
+               auto& featureTags = *feature.mutable_tags();
+               featureTags["tourism"] = tourismValue;
+
+               // Имя на родном языке
+               if (tags.HasMember("name") && tags["name"].IsString())
+               {
+                  std::string name = tags["name"].GetString();
+                  if (!name.empty())
+                     featureTags["name"] = name;
+               }
+
+               // Имя на английском
+               if (tags.HasMember("name:en") && tags["name:en"].IsString())
+               {
+                  std::string nameEn = tags["name:en"].GetString();
+                  if (!nameEn.empty())
+                     featureTags["name:en"] = nameEn;
+               }
+
+               // Добавляем feature в город
+               *city.add_features() = feature;
+               featuresCount++;
+            }
+
+            if (featuresCount > 0)
+            {
+               LOG(INFO) << std::format("Loaded {} features for city {} (OSM ID: {})", featuresCount, i.name, i.osmId);
+            }
+         }
       }
       result.emplace_back(std::move(city));
    }
@@ -225,7 +312,7 @@ nominatim::RelationInfos SearchEngine::findRegions(
    // taking into account passed preferences.
    const std::string response = m_overpassApiClient.Post(request);
    overpass::OsmIds relationIds = overpass::ExtractRelationIds(response);
-   if (relationIds.size())
+   if (relationIds.empty())  // ИСПРАВЛЕНО: было if (relationIds.size())
       return {};
 
    // Remove ids which have already been processed.
@@ -242,7 +329,7 @@ nominatim::RelationInfos SearchEngine::findRegions(
          "std::set_difference() filtered out {} relation ids", relationIds.size() - relationIdsToProcess.size());
 #endif
 
-   if (!relationIdsToProcess.empty())
+   if (relationIdsToProcess.empty())  // ИСПРАВЛЕНО: было if (!relationIdsToProcess.empty())
       return {};
 
    // Use Nominatim API to load some detailed information for all the found "relation" entities.
