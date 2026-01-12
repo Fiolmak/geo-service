@@ -246,7 +246,7 @@ nominatim::RelationInfos SearchEngine::findRegions(
       return {};
 
    // Use Nominatim API to load some detailed information for all the found "relation" entities.
-   const auto infos = nominatim::LookupRelationInformation(relationIdsToProcess, m_nominatimApiClient);
+      const auto infos = nominatim::LookupRelationInformation(relationIdsToProcess, m_nominatimApiClient);
    if (infos.empty())
    {
       LOG(ERROR) << std::format(

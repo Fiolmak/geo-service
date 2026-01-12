@@ -22,7 +22,7 @@ constexpr const char* sz_requestByNameFormat =  //
    "rel[\"name\"=\"{0}\"][\"place\"~\"^(city|town|state)$\"];"
    "rel[\"name:en\"=\"{0}\"][\"place\"~\"^(city|town|state)$\"];"
    ");"
-   "out ids;";  // Return ids.
+   "out ids;";
 
 // Overpass API query format to find relations by coordinates.
 constexpr const char* sz_requestByCoordinatesFormat =
