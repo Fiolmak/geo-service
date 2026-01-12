@@ -89,89 +89,7 @@ GeoProtoPlaces findCities(const overpass::OsmIds& relationIds, nominatim::Match 
       GeoProtoPlace city = toGeoProtoPlace(i);
       if (includeDetails)
       {
-              // ФОРМИРУЕМ OVERPASS QL ЗАПРОС для получения отелей и музеев
-         const std::string request = std::format(
-            R"([out:json][timeout:180];
-            rel(id: {});
-            map_to_area->.cityArea;
-            (
-                node[tourism=hotel](area.cityArea);
-                node[tourism=museum](area.cityArea);
-            );
-            out center;)",
-            i.osmId);
-
-         // Отправляем запрос к Overpass API
-         const std::string response = overpassApiClient.Post(request);
-
-         // Парсим JSON ответ
-         rapidjson::Document document;
-         document.Parse(response.c_str());
-
-         if (document.IsObject() && document.HasMember("elements"))
-         {
-            int featuresCount = 0;
-            for (const auto& element : document["elements"].GetArray())
-            {
-               // Проверяем, что это node (узел)
-               if (!element.IsObject() || !element.HasMember("type") ||
-                   std::string(element["type"].GetString()) != "node")
-                  continue;
-
-               // Проверяем теги
-               if (!element.HasMember("tags") || !element["tags"].IsObject())
-                  continue;
-
-               const auto& tags = element["tags"];
-               if (!tags.HasMember("tourism"))
-                  continue;
-
-               std::string tourismValue = tags["tourism"].GetString();
-               if (tourismValue != "hotel" && tourismValue != "museum")
-                  continue;
-
-               // Создаем Feature
-               GeoProtoTaggedFeature feature;
-
-               // Устанавливаем координаты
-               if (element.HasMember("lat") && element.HasMember("lon"))
-               {
-                  double lat = element["lat"].GetDouble();
-                  double lon = element["lon"].GetDouble();
-                  feature.mutable_position()->set_latitude(lat);
-                  feature.mutable_position()->set_longitude(lon);
-               }
-
-               // Добавляем теги
-               auto& featureTags = *feature.mutable_tags();
-               featureTags["tourism"] = tourismValue;
-
-               // Имя на родном языке
-               if (tags.HasMember("name") && tags["name"].IsString())
-               {
-                  std::string name = tags["name"].GetString();
-                  if (!name.empty())
-                     featureTags["name"] = name;
-               }
-
-               // Имя на английском
-               if (tags.HasMember("name:en") && tags["name:en"].IsString())
-               {
-                  std::string nameEn = tags["name:en"].GetString();
-                  if (!nameEn.empty())
-                     featureTags["name:en"] = nameEn;
-               }
-
-               // Добавляем feature в город
-               *city.add_features() = feature;
-               featuresCount++;
-            }
-
-            if (featuresCount > 0)
-            {
-               LOG(INFO) << std::format("Loaded {} features for city {} (OSM ID: {})", featuresCount, i.name, i.osmId);
-            }
-         }
+         // TODO
       }
       result.emplace_back(std::move(city));
    }
@@ -210,13 +128,13 @@ std::string formatRegionsRequest(const ISearchEngine::RegionPreferences& prefs, 
    if (prefs.objects & geoproto::RegionsRequest::Preferences::GEOGRAPHICAL_FEATURE_SEA_BEACHES)
    {
       const auto nodes = std::format(sz_nodeSeaBeachesDef, boundingBoxStr);
-      request += std::format(sz_requestRelationsByNodes, nodes, ".nodesS", ".areasS", sz_regionsTags, sz_relSaltLakes);
+      request += std::format(sz_requestRelationsByNodes, nodes, ".nodesS", ".areasS", sz_regionsTags, sz_relSeaBeaches);
    }
 
    if (prefs.objects & geoproto::RegionsRequest::Preferences::GEOGRAPHICAL_FEATURE_SALT_LAKES)
    {
       const auto nodes = std::format(sz_nodeSaltLakesDef, boundingBoxStr);
-      request += std::format(sz_requestRelationsByNodes, nodes, ".nodesL", ".areasL", sz_regionsTags, sz_relSeaBeaches);
+      request += std::format(sz_requestRelationsByNodes, nodes, ".nodesL", ".areasL", sz_regionsTags, sz_relSaltLakes);
    }
 
    if (request == sz_requestHeader)
